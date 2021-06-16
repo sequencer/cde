@@ -12,3 +12,35 @@ jobs:
         run: make checkformat
       - name: Check Mill Compile
         run: make compile
+
+  publish-sonatype:
+    if: github.repository == 'sequencer/cde' && contains(github.ref, 'refs/tags/')
+    needs: checks
+    runs-on: ubuntu-latest
+    env:
+      SONATYPE_PGP_PRIVATE_KEY: ${{ secrets.SONATYPE_PGP_PRIVATE_KEY }}
+      SONATYPE_PGP_PRIVATE_KEY_PASSWORD: ${{ secrets.SONATYPE_PGP_PRIVATE_KEY_PASSWORD }}
+      SONATYPE_USER: ${{ secrets.SONATYPE_USER }}
+      SONATYPE_PASSWORD: ${{ secrets.SONATYPE_PASSWORD }}
+      LANG: "en_US.UTF-8"
+      LC_MESSAGES: "en_US.UTF-8"
+      LC_ALL: "en_US.UTF-8"
+    steps:
+      - uses: actions/checkout@v2
+      - name: Setup Mill
+        uses: jodersky/setup-mill@v0.2.3
+      - name: Publish to Maven Central
+        run: |
+          if [[ $(git tag --points-at HEAD) != '' ]]; then
+            echo $SONATYPE_PGP_PRIVATE_KEY | base64 --decode > gpg_key
+            gpg --import --no-tty --batch --yes gpg_key
+            rm gpg_key
+            mill -i mill.scalalib.PublishModule/publishAll \
+              --sonatypeCreds $SONATYPE_USER:$SONATYPE_PASSWORD \
+              --gpgArgs --passphrase=$SONATYPE_PGP_PRIVATE_KEY_PASSWORD,--no-tty,--pinentry-mode,loopback,--batch,--yes,-a,-b \
+              --publishArtifacts __.publishArtifacts \
+              --readTimeout 600000 \
+              --awaitTimeout 600000 \
+              --release true \
+              --signed true
+          fi
